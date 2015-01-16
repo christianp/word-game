@@ -415,6 +415,8 @@ Piece.prototype = {
 
 window.onload = function() {
 	stage = new createjs.Stage("canvas");
+	stage.canvas.width = window.innerWidth-50;
+	stage.canvas.height = window.innerHeight-50;
 	createjs.Touch.enable(stage);
 
 	var g_width = stage.canvas.width;
