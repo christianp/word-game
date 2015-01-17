@@ -36,35 +36,52 @@ function fix_angle(degrees) {
 function Game(stage) {
 	var game = this;
 	this.stage = stage;
+
 	this.g_width = stage.canvas.width;
 	this.g_height = stage.canvas.height;
 
 	this.placed_pieces = new Set();
 	this.tray_pieces = [];
 
+	var background = this.background = new createjs.Shape();
+	stage.addChild(background);
+
 	var world = this.world = new createjs.Container();
 	world.regX = -this.g_width/2;
 	world.regY = -this.g_height/2;
 	stage.addChild(world);
 
-	this.tray_y = this.g_height-100;
+	var offset = new createjs.Point();
+	background.on("mousedown",function(e) {
+		offset.ox = game.world.regX;
+		offset.oy = game.world.regY;
+		offset.x = e.stageX;
+		offset.y = e.stageY;
+	});
+	background.on("pressmove",function(e) {
+		game.world.regX = game.hold.regX = offset.ox-e.stageX+offset.x;
+		game.world.regY = game.hold.regY = offset.oy-e.stageY+offset.y;
+	});
 
 	var tray = this.tray = new createjs.Container();
 	stage.addChild(tray);
-	var tray_background = new createjs.Shape();
-	tray_background.graphics
-		.beginFill('#eee')
-		.rect(0,this.tray_y,this.g_width,this.g_height)
-	;
+	var tray_background = this.tray_background = new createjs.Shape();
 	tray.addChild(tray_background);
-	this.slot_width = this.g_width/7;
 
 	var hold = this.hold = new createjs.Container();
-	hold.regX = -this.g_width/2;
-	hold.regY = -this.g_height/2;
 	stage.addChild(hold);
 
+	this.draw();
 	this.replenish_tray();
+
+	document.onkeypress = function(e) {
+		var key = e.which;
+		switch(key) {
+			case 13:
+				game.end_turn();
+				break;
+		}
+	}
 }
 var vowel_scale = 1.5;
 Game.prototype = {
@@ -97,6 +114,39 @@ Game.prototype = {
 		Z: 0.07
 	},
 
+	draw: function() {
+		var o_width = this.g_width;
+		var o_height = this.g_height;
+
+		this.g_width = this.stage.canvas.width;
+		this.g_height = this.stage.canvas.height;
+
+		this.world.regX += (o_width-this.g_width)/2;
+		this.world.regY += (o_height-this.g_height)/2;
+
+		this.hold.regX = this.world.regX;
+		this.hold.regY = this.world.regY;
+
+		this.background.graphics
+			.clear()
+			.beginFill('#efe')
+			.rect(0,0,this.g_width,this.g_height)
+		;
+
+		this.tray_y = this.g_height-100;
+
+		this.tray_background.graphics
+			.clear()
+			.beginFill('#eee')
+			.rect(0,this.tray_y,this.g_width,this.g_height)
+		;
+		this.slot_width = this.g_width/7;
+
+		this.position_tray_items();
+
+		this.stage.update();
+	},
+
 	add_piece_to_tray: function(piece,to_end) {
 		var i = this.tray_pieces.indexOf(piece);
 		if(i>=0) {
@@ -117,6 +167,7 @@ Game.prototype = {
 
 		this.position_tray_items();
 	},
+
 	remove_from_tray: function(piece) {
 		var i = this.tray_pieces.indexOf(piece);
 		if(i==-1) {
@@ -126,6 +177,7 @@ Game.prototype = {
 		this.position_tray_items();
 		this.placed_pieces.add(piece);
 	},
+
 	position_tray_items: function() {
 		var y = (this.tray_y+this.g_height)/2;
 		this.tray_pieces.map(function(piece,i) {
@@ -413,40 +465,45 @@ Piece.prototype = {
 	}
 }
 
+function resizeGame() {
+	var gameArea = document.getElementById('game-area');
+	var widthToHeight = 16/9;
+	var newWidth = window.innerWidth;
+	var newHeight = window.innerHeight-8;
+	var newWidthToHeight = newWidth / newHeight;
+
+	if (newWidthToHeight > widthToHeight) {
+		newWidth = newHeight * widthToHeight;
+	} else {
+		newHeight = newWidth / widthToHeight;
+	}
+	gameArea.style.height = newHeight + 'px';
+	gameArea.style.width = newWidth + 'px';
+
+	gameArea.style.marginTop = (-newHeight / 2) + 'px';
+	gameArea.style.marginLeft = (-newWidth / 2) + 'px';
+
+	var gameCanvas = document.getElementById('canvas');
+	gameCanvas.width = newWidth;
+	gameCanvas.height = newHeight;
+
+	if(game) {
+		game.draw();
+	}
+}
+
 window.onload = function() {
-	stage = new createjs.Stage("canvas");
-	stage.canvas.width = window.innerWidth-50;
-	stage.canvas.height = window.innerHeight-50;
+	var stage = new createjs.Stage("canvas");
 	createjs.Touch.enable(stage);
-
-	var g_width = stage.canvas.width;
-	var g_height = stage.canvas.height;
-
-	var background = new createjs.Shape();
-	background.graphics.beginFill('white').rect(0,0,g_width,g_height);
-	stage.addChild(background);
 
 	stage.on("pressmove",function(evt) {
 		stage.update();
 	});
 
-	var offset = new createjs.Point();
-	background.on("mousedown",function(e) {
-		offset.ox = game.world.regX;
-		offset.oy = game.world.regY;
-		offset.x = e.stageX;
-		offset.y = e.stageY;
-	});
-	background.on("pressmove",function(e) {
-		game.world.regX = game.hold.regX = offset.ox-e.stageX+offset.x;
-		game.world.regY = game.hold.regY = offset.oy-e.stageY+offset.y;
-	});
-
 	game = new Game(stage);
 
-	document.getElementById('end-turn').onclick = function() {
-		game.end_turn();
-	}
+	window.addEventListener('resize', resizeGame, false);
+	window.addEventListener('orientationchange', resizeGame, false);
 
-	stage.update();
+	resizeGame(game);
 }
