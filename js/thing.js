@@ -5,12 +5,12 @@ var PI = Math.PI;
 function choice(obj) {
 	var total = 0;
 	for(var x in obj) {
-		total += obj[x];
+		total += Math.sqrt(obj[x]);
 	}
 	var r = Math.random()*total;
 	var s = 0;
 	for(var x in obj) {
-		s += obj[x];
+		s += Math.sqrt(obj[x]);
 		if(s>=r) {
 			return x;
 		}
@@ -31,6 +31,12 @@ function fix_angle(degrees) {
 		degrees -= 2*PI;
 	}
 	return degrees;
+}
+
+function distance(p1,p2) {
+	var dx = p1.x-p2.x;
+	var dy = p1.y-p2.y;
+	return Math.sqrt(dx*dx+dy*dy);
 }
 
 function Game(stage) {
@@ -70,6 +76,22 @@ function Game(stage) {
 
 	var hold = this.hold = new createjs.Container();
 	stage.addChild(hold);
+
+	var doneButton = this.doneButton = new createjs.Container();
+	var text = new createjs.Text("Done","40px Arial","black");
+	var metric = text.getMetrics();
+	var rect = new createjs.Shape();
+	rect.graphics
+		.beginFill('lightgreen')
+		.drawRoundRect(-5,-5,metric.width+10,metric.height+10,5);
+	doneButton.addChild(rect);
+	doneButton.addChild(text);
+	stage.addChild(doneButton);
+	doneButton.visible = false;
+
+	doneButton.on('click',function() {
+		game.end_turn();
+	});
 
 	this.draw();
 	this.replenish_tray();
@@ -140,9 +162,11 @@ Game.prototype = {
 			.beginFill('#eee')
 			.rect(0,this.tray_y,this.g_width,this.g_height)
 		;
-		this.slot_width = this.g_width/7;
+		this.slot_width = Math.min(this.g_width/7,3*Piece.radius);
 
 		this.position_tray_items();
+
+		this.doneButton.set({x:this.g_width/2,y:15})
 
 		this.stage.update();
 	},
@@ -194,83 +218,102 @@ Game.prototype = {
 		};
 	},
 
-	end_turn: function() {
-		var unlinked = 0;
-		var unfixed = 0;
-		var first_piece;
-		for(var piece of this.placed_pieces) {
-			if(!piece.fixed) {
-				unfixed += 1;
-				if(piece.linked_piece && piece.linked_pieces.size==0) {
-					first_piece = piece;
+	can_end_turn: function() {
+		this.doneButton.visible = false;
+
+		try {
+			var unlinked = 0;
+			var unfixed = 0;
+			var first_piece;
+			for(var piece of this.placed_pieces) {
+				if(!piece.fixed) {
+					unfixed += 1;
+					if(piece.linked_piece && piece.linked_pieces.size==0) {
+						first_piece = piece;
+					}
+				}
+				if(!piece.linked_piece) {
+					unlinked += 1;
 				}
 			}
-			if(!piece.linked_piece) {
-				unlinked += 1;
+			if(unlinked>1) {
+				throw(new Error("There's a loose piece on the board"));
 			}
-		}
-		if(unlinked>1 || unfixed==0) {
-			return false;
-		}
+			if(unfixed==0) {
+				throw(new Error("No new pieces on the board"));
+			}
 
-		var path = [];
-		var piece = first_piece;
-		while(piece && !piece.fixed) {
-			path.push(piece);
-			piece = piece.linked_piece;
-		}
-		if(!piece) {
-			piece = path[path.length-1];
-			path.pop();
-		}
-		function check_piece(piece,path) {
-			var last = path[path.length-1];
-			path = path.slice();
-			path.push(piece);
-			for(var p2 of piece.linked_pieces) {
-				if(p2!=last) {
+			var path = [];
+			var piece = first_piece;
+			while(piece && !piece.fixed) {
+				path.push(piece);
+				piece = piece.linked_piece;
+			}
+			if(!piece) {
+				piece = path[path.length-1];
+				path.pop();
+			}
+			function check_piece(piece,path) {
+				var last = path[path.length-1];
+				path = path.slice();
+				path.push(piece);
+				for(var p2 of piece.linked_pieces) {
+					if(p2!=last) {
+						var path2 = check_piece(p2,path,piece);
+						if(!path2[path2.length-1].fixed) {
+							return path2;
+						}
+					}
+				}
+				if(piece.linked_piece && piece.linked_piece!=last) {
+					var p2 = piece.linked_piece;
 					var path2 = check_piece(p2,path,piece);
 					if(!path2[path2.length-1].fixed) {
 						return path2;
 					}
 				}
+				return path;
 			}
-			if(piece.linked_piece && piece.linked_piece!=last) {
-				var p2 = piece.linked_piece;
-				var path2 = check_piece(p2,path,piece);
-				if(!path2[path2.length-1].fixed) {
-					return path2;
+			path = check_piece(piece,path);
+
+			var word = path.join('');
+			var word2 = path.reverse().join('');
+
+			if(word.length<3) {
+				throw(new Error("Word is too short"));
+			}
+
+			var word_unfixed = 0;
+			path.map(function(p){
+				if(!p.fixed) {
+					word_unfixed += 1;
 				}
+			});
+			if(word_unfixed!=unfixed) {
+				throw(new Error("Not all the placed letters belong to the same word"));
 			}
-			return path;
+		} catch(e) {
+			return false;
 		}
-		path = check_piece(piece,path);
 
-		var word = path.join('');
-		var word2 = path.reverse().join('');
-		console.log(word,word2);
-
-		if(word.length<3) {
-			console.log("word is too short");
+		this.doneButton.visible = true;
+		return [word,word2];
+	},
+	end_turn: function() {
+		var word = this.can_end_turn();
+		if(!word) {
 			return;
 		}
-
-		var word_unfixed = 0;
-		path.map(function(p){
-			if(!p.fixed) {
-				word_unfixed += 1;
-			}
-		});
-		if(word_unfixed!=unfixed) {
-			console.log("not all letters");
-			return;
-		}
+		console.log(word);
 
 		for(var piece of this.placed_pieces) {
 			piece.fix();
 		}
 
 		this.replenish_tray();
+
+		this.doneButton.visible = false;
+		this.stage.update();
 	}
 }
 
@@ -325,12 +368,7 @@ Piece.prototype = {
 				return;
 			}
 
-			piece.container.addChildAt(piece.shadow,0);
-
-			var p = piece.container.localToLocal(0,0,game.world);
-			piece.container.parent.removeChild(piece.container);
-			game.hold.addChild(piece.container);
-			game.remove_from_tray(piece);
+			piece.pick_up();
 		});
 		container.on("pressmove", function(evt) {
 			if(piece.fixed) {
@@ -341,19 +379,50 @@ Piece.prototype = {
 			piece.set_position(x,y);
 		});
 		container.on("pressup",function(evt) {
-			piece.container.removeChild(piece.shadow);
-
-			if(piece.fixed) {
-				return;
-			}
-			var p = piece.container.localToGlobal(0,0);
-			game.hold.removeChild(piece.container);
-			game.world.addChild(piece.container);
-			if(p.y>game.tray_y) {
-				game.add_piece_to_tray(piece);
-			}
-			game.stage.update();
+			piece.drop();
 		});
+	},
+
+	pick_up: function() {
+		this.container.addChildAt(this.shadow,0);
+		this.overlap = false;
+		this.draw();
+
+		var p = this.container.localToLocal(0,0,this.game.world);
+		this.container.parent.removeChild(this.container);
+		this.game.hold.addChild(this.container);
+		this.game.remove_from_tray(this);
+	},
+
+	drop: function() {
+		var game = this.game;
+		this.container.removeChild(this.shadow);
+
+		if(this.fixed) {
+			return;
+		}
+		var p = this.container.localToGlobal(0,0);
+		game.hold.removeChild(this.container);
+		game.world.addChild(this.container);
+		if(p.y>game.tray_y) {
+			game.add_piece_to_tray(this);
+		}
+
+		this.overlap = false;
+		for(var p2 of game.placed_pieces) {
+			if(!(p2==this || p2==this.neighbour)) {
+				var d = distance(this.container,p2.container);
+				if(d<2*Piece.radius) {
+					this.overlap = true;
+					break;
+				}
+			}
+		}
+
+		this.draw();
+
+		game.can_end_turn();
+		game.stage.update();
 	},
 
 	draw: function() {
@@ -368,9 +437,10 @@ Piece.prototype = {
 			.arc(0,0,radius,rad(-90)+alpha,rad(270)-alpha)
 			.arc(0,-sub,radius,rad(90)+beta,rad(90)-beta,true)
 		;
+		var color = this.fixed ? '#eee' : this.overlap ? 'red' : 'white';
 		this.circle.graphics
 			.clear()
-			.beginFill(this.fixed ? '#eee' : "white")
+			.beginFill(color)
 			.beginStroke("black")
 			.arc(0,0,radius,rad(-90)+alpha,rad(270)-alpha)
 			.arc(0,-sub,radius,rad(90)+beta,rad(90)-beta,true)
@@ -395,6 +465,7 @@ Piece.prototype = {
 
 		var neighbour = this.closestNeighbour();
 		if(neighbour && neighbour.distance<3*Piece.radius) {
+			this.neighbour = neighbour.piece;
 			var dx = (this.container.x - neighbour.piece.container.x)/neighbour.distance;
 			var dy = (this.container.y - neighbour.piece.container.y)/neighbour.distance;
 			var rotation = deg(Math.atan2(dy,dx))-90;
