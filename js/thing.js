@@ -39,9 +39,10 @@ function distance(p1,p2) {
 	return Math.sqrt(dx*dx+dy*dy);
 }
 
-function Game(stage) {
+function Game(stage,wordlist) {
 	var game = this;
 	this.stage = stage;
+	this.wordlist = wordlist;
 
 	this.g_width = stage.canvas.width;
 	this.g_height = stage.canvas.height;
@@ -297,7 +298,14 @@ Game.prototype = {
 		}
 
 		this.doneButton.visible = true;
-		return [word,word2];
+
+		if(this.wordlist.has(word)) {
+			return word;
+		} else if(this.wordlist.has(word2)) {
+			return word2;
+		} else {
+			return false;
+		}
 	},
 	end_turn: function() {
 		var word = this.can_end_turn();
@@ -563,7 +571,8 @@ function resizeGame() {
 	}
 }
 
-window.onload = function() {
+$(document).ready(function() {
+	words = new Set(words.split('\n').map(function(word){return word.toUpperCase()}));
 	var stage = new createjs.Stage("canvas");
 	createjs.Touch.enable(stage);
 
@@ -571,10 +580,10 @@ window.onload = function() {
 		stage.update();
 	});
 
-	game = new Game(stage);
+	game = new Game(stage,words);
 
 	window.addEventListener('resize', resizeGame, false);
 	window.addEventListener('orientationchange', resizeGame, false);
 
 	resizeGame(game);
-}
+});
